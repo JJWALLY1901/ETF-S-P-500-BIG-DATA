@@ -1,205 +1,216 @@
-# Documentación Técnica por Fases - Proyecto S&P 500 ETF
-
-## Fase 1: Fuentes de Datos
-
-### 1.1 Alpha Vantage API
-
-- **Tipo**: Datos financieros históricos
-- **Frecuencia**: Actualización diaria
-- **Endpoint**: `TIME_SERIES_DAILY`
-- **Datos recolectados**:
-  ```json
-  {
-    "Meta Data": {
-      "Symbol": "SPY",
-      "Last Refreshed": "2025-06-28",
-      "Time Zone": "US/Eastern"
-    },
-    "Time Series (Daily)": {
-      "2025-06-28": {
-        "open": "420.15",
-        "high": "422.30",
-        "low": "418.75",
-        "close": "421.80",
-        "volume": "32015460"
-      }
-    }
-  }
-
-  ```
-
-### 1.2 Twitter API v2
-
-- **Filtros aplicados**:
-  ```python
-  query = '#SPY OR #S&P500 lang:es -is:retweet'
-  tweet_fields = ['created_at', 'text', 'author_id', 'public_metrics']
-  ```
-
-### 1.3 Reddit API (PRAW)
-
-- **Subreddits monitoreados**:
-  ```python
-  SUBREDDITS = ['stocks', 'investing', 'StockMarket']
-  LIMIT = 200  # Máximo por subreddit
-  ```
+# **Proyecto Big Data - Análisis del ETF S&P 500**  
+**Sistema de ingesta, procesamiento y visualización de datos financieros y de redes sociales**  
 
 ---
 
-## Fase 2: Ingesta de Datos
-
-### 2.1 Pipeline Apache NiFi
-
-- **Flujo**:
-  ```
-  GetFile Alpha → PutMongo Alpha  
-  GetFile Twitter → PutMongo Twitter  
-  GetFile Reddit → PutMongo Reddit  
-  ```
-- **Configuraciones clave**:
-  - Frecuencia de polling: 5 minutos
-  - Rutas de entrada:
-    - Financiero: `/etf_proyecto/data/alpha/`
-    - Reddit: `/etf_proyecto/data/reddit/`
-    - Twitter: `/etf_proyecto/data/twitter/`
-
-### 2.2 Transformaciones Iniciales
-
-- **Procesador**: `JoltTransformJSON`
-  ```json
-  {
-    "operation": "shift",
-    "spec": {
-      "Time Series (Daily)": {
-        "*": {
-          "open": "[&1].open",
-          "high": "[&1].high",
-          "close": "[&1].close"
-        }
-      }
-    }
-  }
-  ```
+## **📌 Tabla de Contenidos**  
+1. [**Descripción del Proyecto**](#-descripción-del-proyecto)  
+3. [**Guía de Instalación y Configuración**](#-guía-de-instalación-y-configuración)  
+   - [Requisitos Previos](#requisitos-previos)  
+   - [Configuración de AWS EC2](#configuración-de-aws-ec2)  
+   - [Instalación de Python y Entorno Virtual](#instalación-de-python-y-entorno-virtual)  
+   - [Configuración de MongoDB](#configuración-de-mongodb)  
+   - [Instalación de Apache NiFi](#instalación-de-apache-nifi)  
+   - [Instalación de Apache Spark](#instalación-de-apache-spark)  
+4. [**Ejecución de Scripts**](#-ejecución-de-scripts)  
+   - [Recolección de Datos (Alpha Vantage, Twitter, Reddit)](#recolección-de-datos-alpha-vantage-twitter-reddit)  
+   - [Procesamiento con Spark](#procesamiento-con-spark)  
+5. [**Visualización con Metabase**](#-visualización-con-metabase)  
+6. [**Automatización con Cron](#-automatización-con-cron)  
+7. [**Estructura del Repositorio**](#-estructura-del-repositorio)  
+8. [**Licencia**](#-licencia)  
 
 ---
 
-## Fase 3: Almacenamiento de Datos
+## **📌 Descripción del Proyecto**  
+Este proyecto permite recolectar, procesar y visualizar datos financieros del **ETF S&P 500** (SPY) y datos de redes sociales (Twitter, Reddit) para analizar correlaciones entre el mercado bursátil y el sentimiento social.  
 
-### 3.1 Estructura MongoDB
+**Componentes principales:**  
+✅ **Ingesta de datos:**  
+- Alpha Vantage (datos financieros históricos).  
+- Twitter API (tweets con hashtags relacionados).  
+- Reddit API (publicaciones en subreddits financieros).  
 
-- **Colección `alpha_raw`**:
-  ```json
-  {
-    "_id": ObjectId("..."),
-    "symbol": "SPY",
-    "date": ISODate("2025-06-28"),
-    "open": 420.15,
-    "high": 422.30,
-    "volume": 32015460
-  }
-  ```
-- **Colección `reddit_processed`**:
-  ```json
-  {
-    "post_id": "t3_xyz123",
-    "content": "Análisis SPY Q3 2025",
-    "engagement": {
-      "score": 8421,
-      "comments": 215
-    },
-    "source": "stocks"
-  }
-  ```
+✅ **Procesamiento con Apache Spark:**  
+- Limpieza y transformación de datos.  
+- Almacenamiento en MongoDB.  
 
-### 3.2 Índices Optimizados
+✅ **Automatización con Apache NiFi:**  
+- Flujo automatizado de ingesta de datos.  
 
-```javascript
-db.alpha_raw.createIndex({ symbol: 1, date: -1 })
-db.twitter_processed.createIndex({ author_id: 1 })
-db.reddit_processed.createIndex({ "engagement.score": -1 })
-```
+✅ **Visualización con Metabase:**  
+- Dashboards interactivos con gráficos financieros y análisis de redes sociales.    
 
 ---
 
-## Fase 4: Procesamiento y Análisis
+## **📌 Guía de Instalación y Configuración**  
 
-### 4.1 Flujo Spark ETL
-
-```python
-def process_reddit(spark):
-    df = spark.read.format("mongo").load()
-    return df.withColumn(
-        "date",
-        from_unixtime(col("created_utc")).cast(DateType())
-    ).filter(col("title").contains("SPY"))
-```
-
-### 4.2 Métricas Clave Calculadas
-
-```sql
--- Correlación precio-volumen
-SELECT
-    date,
-    close,
-    volume,
-    CORR(close, volume) OVER (ORDER BY date ROWS 7 PRECEDING) AS rolling_corr
-FROM alpha_processed
-```
+### **Requisitos Previos**  
+- **Cuenta AWS** (para EC2 y servicios relacionados).  
+- **Python 3.8+** (para ejecutar los scripts).  
+- **MongoDB** (base de datos NoSQL).  
+- **Apache NiFi** (automatización de flujos de datos).  
+- **Apache Spark** (procesamiento distribuido).  
 
 ---
 
-## Fase 5: Visualización de Datos
+### **🔹 Configuración de AWS EC2**  
+1. **Crear una instancia EC2 (Ubuntu 22.04 LTS)**  
+   - Tipo de instancia: `t2.micro` (Free Tier).  
+   - Grupo de seguridad: Habilitar puertos **22 (SSH), 8080 (NiFi), 27017 (MongoDB), 3000 (Metabase)**.  
+   - Clave SSH: Generar o usar una existente.  
 
-### 5.1 Dashboard Metabase
-
-- **Widget Precio SPY**:
-
-  - Tipo: Serie temporal
-  - Métrica: `close`
-  - Filtro: Últimos 90 días
-- **Heatmap Actividad Reddit**:
-
-  ```sql
-  SELECT
-      HOUR(created_at) AS hour,
-      DAYOFWEEK(created_at) AS day,
-      COUNT(*) AS posts
-  FROM reddit_processed
-  GROUP BY hour, day
-  ```
-
-### 5.2 Plantilla de Visualización
-
-```json
-{
-  "dashboard": {
-    "name": "SPY Monitor",
-    "cards": [
-      {
-        "type": "line",
-        "title": "Precio de Cierre",
-        "query": "SELECT date, close FROM alpha_processed..."
-      }
-    ]
-  }
-}
-```
+2. **Conectarse por SSH**  
+   ```bash
+   ssh -i "tu-key.pem" ubuntu@<IP_PUBLICA_EC2>
+   ```  
 
 ---
 
-## Diagrama Final por Fases
+### **🔹 Instalación de Python y Entorno Virtual**  
+1. **Actualizar el sistema e instalar Python**  
+   ```bash
+   sudo apt update && sudo apt upgrade -y
+   sudo apt install python3 python3-pip python3-venv -y
+   ```  
 
+2. **Crear entorno virtual**  
+   ```bash
+   python3 -m venv etfenv
+   source etfenv/bin/activate
+   ```  
+
+3. **Instalar dependencias**  
+   ```bash
+   pip install requests python-dotenv tweepy praw pyspark
+   ```  
+
+---
+
+### **🔹 Configuración de MongoDB**  
+1. **Instalar MongoDB**  
+   ```bash
+   sudo apt install mongodb -y
+   sudo systemctl start mongodb
+   sudo systemctl enable mongodb
+   ```  
+
+2. **Crear base de datos y colecciones**  
+   ```bash
+   mongo
+   > use bigdata_db
+   > db.createCollection("alpha")
+   > db.createCollection("twitter")
+   > db.createCollection("reddit")
+   ```  
+
+---
+
+### **🔹 Instalación de Apache NiFi**  
+1. **Descargar e instalar NiFi**  
+   ```bash
+   wget https://downloads.apache.org/nifi/1.25.0/nifi-1.25.0-bin.tar.gz
+   tar -xvf nifi-1.25.0-bin.tar.gz
+   cd nifi-1.25.0/bin
+   ./nifi.sh start
+   ```  
+
+2. **Acceder a la interfaz**  
+   Abrir en el navegador:  
+   ```
+   http://<IP_PUBLICA_EC2>:8080/nifi
+   ```  
+
+---
+
+### **🔹 Instalación de Apache Spark**  
+1. **Descargar Spark**  
+   ```bash
+   wget https://downloads.apache.org/spark/spark-3.4.1/spark-3.4.1-bin-hadoop3.tgz
+   tar -xvf spark-3.4.1-bin-hadoop3.tgz
+   ```  
+
+2. **Configurar variables de entorno**  
+   ```bash
+   echo 'export SPARK_HOME=~/spark-3.4.1-bin-hadoop3' >> ~/.bashrc
+   echo 'export PATH=$PATH:$SPARK_HOME/bin' >> ~/.bashrc
+   source ~/.bashrc
+   ```  
+
+---
+
+## **📌 Ejecución de Scripts**  
+
+### **🔹 Recolección de Datos (Alpha Vantage, Twitter, Reddit)**  
+1. **Alpha Vantage** (`descargar_alpha.py`)  
+   ```bash
+   python3 descargar_alpha.py
+   ```  
+
+2. **Twitter** (`twitter_scraper.py`)  
+   ```bash
+   python3 twitter_scraper.py
+   ```  
+
+3. **Reddit** (`reddit_scraper.py`)  
+   ```bash
+   python3 reddit_scraper.py
+   ```  
+
+---
+
+### **🔹 Procesamiento con Spark**  
+1. **Ejecutar script de procesamiento**  
+   ```bash
+   spark-submit --packages org.mongodb.spark:mongo-spark-connector_2.12:10.0.5 spark_mongo_alpha.py
+   ```  
+
+---
+
+## **📌 Visualización con Metabase**  
+1. **Instalar Metabase**  
+   ```bash
+   sudo apt install openjdk-11-jdk -y
+   mkdir ~/metabase && cd ~/metabase
+   wget https://downloads.metabase.com/v0.46.3/metabase.jar
+   java -jar metabase.jar
+   ```  
+
+2. **Acceder al dashboard**  
+   ```
+   http://<IP_PUBLICA_EC2>:3000
+   ```  
+
+---
+
+## **📌 Automatización con Cron**  
+1. **Programar ejecución automática**  
+   ```bash
+   crontab -e
+   ```  
+   Añadir:  
+   ```bash
+   0 * * * * /usr/bin/python3 /home/ubuntu/etf_proyecto/scripts/data_collection/descargar_alpha.py
+   ```  
+
+
+## **📌 Estructura del Repositorio**  
 ```
-Fuentes → API  
-Ingesta → NiFi  
-Almacenamiento → MongoDB  
-Procesamiento → Spark  
-Visualización → Metabase  
-```
+etf-sp500-bigdata-project/
+├── docs/                          # Documentación
+├── scripts/                       # Scripts Python
+├── nifi_templates/                # Flujos de NiFi
+├── sample_data/                   # Datos de ejemplo
+├── images/                        # Imágenes
+├── .env.template                  # Variables de entorno
+├── requirements.txt               # Dependencias
+└── README.md                      # Guía principal
+```  
 
-**Notas de Versión**:
 
-- **v2.3**: 28/06/2025 - Estructura por fases validadas
+ 
+
+
 - Autores
   
   Ormeño Flores, Juan Julian

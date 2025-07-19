@@ -201,6 +201,7 @@ Visualización → Metabase
 
 - **v2.3**: 28/06/2025 - Estructura por fases validadas
 - Autores
+  
   Ormeño Flores, Juan Julian
   
   Ordoñez Chuquihuaccha, Gerardo Angel

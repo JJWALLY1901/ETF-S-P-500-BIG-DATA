@@ -1,0 +1,34 @@
+{
+  "template": {
+    "name": "ETF_Data_Flow",
+    "description": "Flujo para ingesta de datos financieros y sociales",
+    "processors": [
+      {
+        "id": "get-file-alpha",
+        "name": "GetFile-Alpha",
+        "type": "org.apache.nifi.processors.standard.GetFile",
+        "config": {
+          "Input Directory": "/home/ubuntu/etf_proyecto/data/alpha",
+          "File Filter": ".*\\.json$",
+          "Keep Source File": "false"
+        }
+      },
+      {
+        "id": "put-mongo-alpha",
+        "name": "PutMongo-Alpha",
+        "type": "org.apache.nifi.processors.mongodb.PutMongoRecord",
+        "config": {
+          "Mongo URI": "mongodb://localhost:27017",
+          "Database Name": "bigdata_db",
+          "Collection Name": "alpha"
+        }
+      }
+    ],
+    "connections": [
+      {
+        "source": "get-file-alpha",
+        "destination": "put-mongo-alpha"
+      }
+    ]
+  }
+}
